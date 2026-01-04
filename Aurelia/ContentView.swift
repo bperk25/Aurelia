@@ -41,13 +41,19 @@ struct ContentView: View {
                     Label("All Items", systemImage: "tray.full")
                         .tag(SidebarItem.all)
 
-                    Label("Starred", systemImage: "star.fill")
-                        .foregroundStyle(AureliaColors.starred)
-                        .tag(SidebarItem.starred)
+                    Label {
+                        Text("Anchored")
+                    } icon: {
+                        Image("AnchorIcon")
+                            .renderingMode(.template)
+                    }
+                    .foregroundStyle(AureliaColors.anchored)
+                    .tag(SidebarItem.starred)
                 }
             }
             .listStyle(.sidebar)
             .frame(minWidth: 180)
+            .background(AureliaColors.sidebarBackground)
         } detail: {
             // Main content
             VStack(spacing: 0) {
@@ -57,6 +63,7 @@ struct ContentView: View {
                     .padding(.vertical, AureliaDesign.Spacing.md)
 
                 Divider()
+                    .background(AureliaColors.separator)
 
                 // Content area
                 if filteredItems.isEmpty {
@@ -67,11 +74,12 @@ struct ContentView: View {
                             columns: [GridItem(.adaptive(minimum: 220))],
                             spacing: AureliaDesign.Spacing.md
                         ) {
-                            ForEach(filteredItems) { item in
+                            ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
                                 ClipboardItemCard(
                                     item: item,
                                     clipboardManager: clipboardManager
                                 )
+                                .depthOpacity(index: index, surfaceCount: 8)
                             }
                         }
                         .padding(AureliaDesign.Spacing.lg)
@@ -79,6 +87,7 @@ struct ContentView: View {
                 }
             }
             .frame(minWidth: 600)
+            .background(AureliaColors.windowBackground)
         }
         .navigationTitle("Aurelia")
         .toolbar {
@@ -90,6 +99,7 @@ struct ContentView: View {
                 }
             }
         }
+        .background(AureliaColors.abyss)
     }
 
     // MARK: - Header
@@ -102,6 +112,7 @@ struct ContentView: View {
                     .foregroundStyle(AureliaColors.secondaryText)
                 TextField("Search clipboard...", text: $searchText)
                     .textFieldStyle(.plain)
+                    .foregroundStyle(AureliaColors.primaryText)
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
@@ -113,7 +124,7 @@ struct ContentView: View {
                 }
             }
             .padding(AureliaDesign.Spacing.sm)
-            .background(AureliaColors.cardBackground)
+            .glassEffect()
             .clipShape(RoundedRectangle(cornerRadius: AureliaDesign.Radius.md))
             .frame(maxWidth: 300)
 
@@ -140,13 +151,14 @@ struct ContentView: View {
                 Label("Clear All", systemImage: "trash")
             }
             .buttonStyle(.bordered)
+            .tint(AureliaColors.destructive)
             .alert("Clear Clipboard History", isPresented: $showingClearConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Clear All", role: .destructive) {
                     clipboardManager.clearAll()
                 }
             } message: {
-                Text("Are you sure you want to delete all clipboard items? This cannot be undone.")
+                Text("All your clipboard items will be washed away into the deep. This cannot be undone.")
             }
         }
     }
@@ -155,7 +167,16 @@ struct ContentView: View {
 
     private var emptyStateView: some View {
         VStack(spacing: AureliaDesign.Spacing.md) {
-            Image(systemName: selectedSidebarItem == .starred ? "star" : "doc.on.clipboard")
+            Group {
+                if selectedSidebarItem == .starred {
+                    Image("AnchorIcon")
+                        .renderingMode(.template)
+                        .resizable()
+                        .frame(width: 48, height: 48)
+                } else {
+                    Image(systemName: "water.waves")
+                }
+            }
                 .font(.system(size: 48))
                 .foregroundStyle(AureliaColors.tertiaryText)
 
@@ -168,13 +189,13 @@ struct ContentView: View {
 
     private var emptyStateMessage: String {
         if !searchText.isEmpty {
-            return "No items match your search"
+            return "No items found in these waters"
         }
         switch selectedSidebarItem {
         case .all:
-            return "Copy something to get started"
+            return "The deep awaits..."
         case .starred:
-            return "Star items to keep them here"
+            return "Anchor items to keep them safe"
         }
     }
 }
@@ -229,9 +250,11 @@ struct ClipboardItemCard: View {
                 Spacer()
 
                 if item.isPinned {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(AureliaColors.starred)
+                    Image("AnchorIcon")
+                        .renderingMode(.template)
+                        .resizable()
+                        .frame(width: 10, height: 10)
+                        .foregroundStyle(AureliaColors.anchored)
                 }
             }
 
@@ -248,15 +271,9 @@ struct ClipboardItemCard: View {
         }
         .padding(AureliaDesign.Spacing.sm)
         .frame(width: AureliaDesign.Card.width + AureliaDesign.Spacing.sm * 2)
-        .background(AureliaColors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AureliaDesign.Radius.lg))
-        .shadow(
-            color: isHovering ? AureliaDesign.Shadow.md : AureliaDesign.Shadow.sm,
-            radius: isHovering ? 8 : 2,
-            x: 0, y: isHovering ? 4 : 1
-        )
-        .scaleEffect(isHovering ? 1.02 : 1.0)
-        .animation(AureliaDesign.Animation.spring, value: isHovering)
+        .bioluminescentCard(isHovering: isHovering)
+        .scaleEffect(isHovering ? 1.015 : 1.0)
+        .animation(AureliaDesign.Animation.gentle, value: isHovering)
         .onHover { isHovering = $0 }
         .onTapGesture {
             clipboardManager.copyToClipboard(item)
@@ -327,7 +344,7 @@ struct ClipboardItemCard: View {
                 .foregroundStyle(AureliaColors.secondaryText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AureliaColors.sidebarBackground)
+        .background(AureliaColors.abyssMedium)
     }
 
     // MARK: - Context Menu
@@ -354,8 +371,8 @@ struct ClipboardItemCard: View {
             clipboardManager.togglePinned(item)
         } label: {
             Label(
-                item.isPinned ? "Unstar" : "Star",
-                systemImage: item.isPinned ? "star.slash" : "star"
+                item.isPinned ? "Remove Anchor" : "Anchor",
+                systemImage: item.isPinned ? "xmark.circle" : "arrow.down.to.line"
             )
         }
 

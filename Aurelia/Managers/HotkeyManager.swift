@@ -16,8 +16,8 @@ final class HotkeyManager {
     private let keyCodeKey = "hotkeyKeyCode"
     private let modifiersKey = "hotkeyModifiers"
 
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
+    private var hotKeyRef: EventHotKeyRef?
+    private static let hotKeyID = EventHotKeyID(signature: OSType(0x4155524C), id: 1) // "AURL"
 
     var keyCode: UInt16 {
         didSet {
@@ -59,38 +59,78 @@ final class HotkeyManager {
         let savedModifiers = defaults.integer(forKey: modifiersKey)
 
         if savedKeyCode == 0 && savedModifiers == 0 {
-            // Default: Option+Shift+J
-            self.keyCode = UInt16(kVK_ANSI_J)
-            self.modifiers = [.option, .shift]
+            // Default: Ctrl+Shift+V
+            self.keyCode = UInt16(kVK_ANSI_V)
+            self.modifiers = [.control, .shift]
         } else {
             self.keyCode = UInt16(savedKeyCode)
             self.modifiers = NSEvent.ModifierFlags(rawValue: UInt(savedModifiers))
         }
+
+        // Install the global event handler
+        installEventHandler()
+    }
+
+    private func installEventHandler() {
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            { (_, event, _) -> OSStatus in
+                var hotKeyID = EventHotKeyID()
+                GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hotKeyID
+                )
+
+                if hotKeyID.signature == HotkeyManager.hotKeyID.signature && hotKeyID.id == HotkeyManager.hotKeyID.id {
+                    DispatchQueue.main.async {
+                        HotkeyManager.shared.toggleMenuBarPopover()
+                    }
+                }
+                return noErr
+            },
+            1,
+            &eventType,
+            nil,
+            nil
+        )
     }
 
     func startMonitoring() {
         guard isEnabled else { return }
+        guard hotKeyRef == nil else { return } // Already registered
 
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleKeyEvent(event)
-        }
+        let carbonModifiers = carbonModifierFlags(from: modifiers)
 
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if self?.handleKeyEvent(event) == true {
-                return nil
-            }
-            return event
+        var hotKeyID = HotkeyManager.hotKeyID
+        var ref: EventHotKeyRef?
+
+        let status = RegisterEventHotKey(
+            UInt32(keyCode),
+            carbonModifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &ref
+        )
+
+        if status == noErr {
+            hotKeyRef = ref
+        } else {
+            print("Failed to register hotkey: \(status)")
         }
     }
 
     func stopMonitoring() {
-        if let monitor = globalMonitor {
-            NSEvent.removeMonitor(monitor)
-            globalMonitor = nil
-        }
-        if let monitor = localMonitor {
-            NSEvent.removeMonitor(monitor)
-            localMonitor = nil
+        if let ref = hotKeyRef {
+            UnregisterEventHotKey(ref)
+            hotKeyRef = nil
         }
     }
 
@@ -99,21 +139,9 @@ final class HotkeyManager {
         startMonitoring()
     }
 
-    @discardableResult
-    private func handleKeyEvent(_ event: NSEvent) -> Bool {
-        let eventModifiers = event.modifierFlags.intersection([.command, .option, .shift, .control])
-
-        guard event.keyCode == keyCode && eventModifiers == modifiers else {
-            return false
-        }
-
-        toggleMenuBarPopover()
-        return true
-    }
-
     private func toggleMenuBarPopover() {
-        NSApp.activate(ignoringOtherApps: true)
-        MenuBarManager.shared.togglePopover()
+        // Use floating panel instead of menu bar popover for better focus handling
+        FloatingPanelManager.shared.toggle()
     }
 
     func setShortcut(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
@@ -127,6 +155,38 @@ final class HotkeyManager {
         defaults.removeObject(forKey: keyCodeKey)
         defaults.removeObject(forKey: modifiersKey)
         stopMonitoring()
+    }
+
+    /// Convert NSEvent modifier flags to Carbon modifier flags
+    private func carbonModifierFlags(from flags: NSEvent.ModifierFlags) -> UInt32 {
+        var carbonFlags: UInt32 = 0
+
+        if flags.contains(.command) { carbonFlags |= UInt32(cmdKey) }
+        if flags.contains(.option) { carbonFlags |= UInt32(optionKey) }
+        if flags.contains(.control) { carbonFlags |= UInt32(controlKey) }
+        if flags.contains(.shift) { carbonFlags |= UInt32(shiftKey) }
+
+        return carbonFlags
+    }
+
+    /// Simulate Cmd+V to paste clipboard content into the active app
+    static func simulatePaste() {
+        // Small delay to ensure clipboard is updated and popover is closed
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let source = CGEventSource(stateID: .hidSystemState)
+
+            // Key down for Cmd+V
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true)
+            keyDown?.flags = .maskCommand
+
+            // Key up for Cmd+V
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
+            keyUp?.flags = .maskCommand
+
+            // Post the events
+            keyDown?.post(tap: .cghidEventTap)
+            keyUp?.post(tap: .cghidEventTap)
+        }
     }
 
     private func keyCodeToString(_ keyCode: UInt16) -> String? {

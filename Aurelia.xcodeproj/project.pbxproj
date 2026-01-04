@@ -24,9 +24,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		8196F7D22D26125B00AF1F66 /* ClipboardApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aurelia.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		8196F7E32D26125E00AF1F66 /* ClipboardAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AureliaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		8196F7ED2D26125E00AF1F66 /* ClipboardAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AureliaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		8196F7D22D26125B00AF1F66 /* Aurelia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aurelia.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8196F7E32D26125E00AF1F66 /* AureliaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AureliaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		8196F7ED2D26125E00AF1F66 /* AureliaUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AureliaUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -85,9 +85,9 @@
 		8196F7D32D26125B00AF1F66 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				8196F7D22D26125B00AF1F66 /* ClipboardApp.app */,
-				8196F7E32D26125E00AF1F66 /* ClipboardAppTests.xctest */,
-				8196F7ED2D26125E00AF1F66 /* ClipboardAppUITests.xctest */,
+				8196F7D22D26125B00AF1F66 /* Aurelia.app */,
+				8196F7E32D26125E00AF1F66 /* AureliaTests.xctest */,
+				8196F7ED2D26125E00AF1F66 /* AureliaUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -114,7 +114,7 @@
 			packageProductDependencies = (
 			);
 			productName = Aurelia;
-			productReference = 8196F7D22D26125B00AF1F66 /* ClipboardApp.app */;
+			productReference = 8196F7D22D26125B00AF1F66 /* Aurelia.app */;
 			productType = "com.apple.product-type.application";
 		};
 		8196F7E22D26125E00AF1F66 /* AureliaTests */ = {
@@ -137,7 +137,7 @@
 			packageProductDependencies = (
 			);
 			productName = AureliaTests;
-			productReference = 8196F7E32D26125E00AF1F66 /* ClipboardAppTests.xctest */;
+			productReference = 8196F7E32D26125E00AF1F66 /* AureliaTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		8196F7EC2D26125E00AF1F66 /* AureliaUITests */ = {
@@ -160,7 +160,7 @@
 			packageProductDependencies = (
 			);
 			productName = AureliaUITests;
-			productReference = 8196F7ED2D26125E00AF1F66 /* ClipboardAppUITests.xctest */;
+			productReference = 8196F7ED2D26125E00AF1F66 /* AureliaUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */

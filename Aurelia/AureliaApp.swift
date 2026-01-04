@@ -18,6 +18,7 @@ struct AureliaApp: App {
                     minWidth: AureliaDesign.Layout.minWindowWidth,
                     minHeight: AureliaDesign.Layout.minWindowHeight
                 )
+                .preferredColorScheme(.dark)
         }
         .windowStyle(.automatic)
         .defaultSize(width: AureliaDesign.Layout.minWindowWidth,
@@ -28,3 +29,4 @@ struct AureliaApp: App {
         }
     }
 }
+

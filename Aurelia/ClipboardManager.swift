@@ -101,6 +101,9 @@ final class ClipboardManager {
 
         // Prune old items
         pruneExpiredItems()
+
+        // Post notification for menu bar pulse animation
+        NotificationCenter.default.post(name: .clipboardDidChange, object: nil)
     }
 
     // MARK: - Copy to Clipboard
