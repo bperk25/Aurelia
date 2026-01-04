@@ -1,0 +1,69 @@
+great! now here is a feature spec. also i have an app icon and a menu icon in my downloads folder. i want the app named Aurelia.
+Now I want to add the following features:
+Core Features to Implement:
+
+Search functionality - Add an intelligent search bar that filters clipboard history in real-time. Should search across text content, and potentially support filtering by content type.
+Content previews - Enhance the existing cards with better visual previews:
+
+Large, clear text previews
+Image thumbnails for copied images
+Link previews with metadata if possible
+File icons/names for copied files
+
+
+Privacy controls - Add a system to ignore/exclude certain apps from clipboard tracking. Should include:
+
+Settings panel to add apps to an ignore list
+Common password managers pre-configured (1Password, LastPass, Keychain Access, etc.)
+Option to pause clipboard monitoring entirely
+
+
+Pinboards/Collections - Let users save frequently used items:
+
+Create named collections
+Star/favorite items to keep them permanently
+Organize items into custom groups
+
+
+Format control - When pasting, give options to:
+
+Paste as plain text (strip all formatting)
+Keep original formatting
+Maybe a quick toggle or modifier key
+
+
+Content type filtering - Add UI to filter history by type:
+
+All items
+Text only
+Images only
+Links only
+Files only
+
+
+
+UI/UX Elements:
+
+Menu bar integration - Add a menu bar icon (use a placeholder/generic icon for now like a clipboard symbol). Clicking it should:
+
+Show a dropdown with recent items
+Provide quick access to open the main app
+Show app preferences/settings option
+
+
+Context menus - Right-click on clipboard items should show options:
+
+Copy to clipboard
+Delete item
+Add to collection/favorite
+Copy as plain text
+View full content
+
+
+Dark mode support - Ensure the app looks good in both light and dark modes with proper color adaptation
+Clean, minimal design - Keep the interface unobtrusive and visually appealing with:
+
+Good spacing and padding
+Clear typography
+Smooth transitions/animations
+Visual hierarchy that makes scanning easy
