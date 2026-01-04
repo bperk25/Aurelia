@@ -24,7 +24,7 @@ A powerful macOS clipboard manager with history, search, collections, privacy co
 ## File Structure
 
 ```
-ClipboardApp/
+Aurelia/
 ├── AureliaApp.swift                    # App entry point
 ├── AppDelegate.swift                   # NSApplicationDelegate (menu bar setup)
 ├── ContentView.swift                   # Main UI with sidebar
@@ -34,9 +34,10 @@ ClipboardApp/
 ├── AppSettings.swift                   # RetentionPeriod, UserDefaults persistence
 │
 ├── Managers/
-│   ├── ClipboardManager.swift          # Clipboard monitoring, filtering
+│   ├── ClipboardManager.swift          # Clipboard monitoring, filtering (singleton)
 │   ├── MenuBarManager.swift            # NSStatusItem, popover
-│   └── PrivacyManager.swift            # Ignored apps, pause monitoring
+│   ├── PrivacyManager.swift            # Ignored apps, pause monitoring
+│   └── HotkeyManager.swift             # Global keyboard shortcut
 │
 ├── StorageManager.swift                # SQLite database + file storage
 │
@@ -44,7 +45,7 @@ ClipboardApp/
 │   ├── MenuBar/
 │   │   └── MenuBarPopoverView.swift    # Menu bar popover UI
 │   └── Settings/
-│       ├── GeneralSettingsView.swift   # Retention settings
+│       ├── GeneralSettingsView.swift   # Retention, startup, keyboard shortcut
 │       └── PrivacySettingsView.swift   # Ignored apps management
 │
 ├── Theme/
@@ -113,11 +114,12 @@ Deduplicate → Insert to DB → Update UI → Prune expired
 
 | Component | Responsibility |
 |-----------|---------------|
-| `ClipboardManager` | Monitors clipboard, manages items, filtering |
+| `ClipboardManager` | Monitors clipboard (singleton), manages items, filtering |
 | `StorageManager` | SQLite CRUD, image file management, migrations |
 | `PrivacyManager` | Ignored apps, pause toggle |
 | `MenuBarManager` | Status item, popover display |
-| `AppSettings` | Retention period persistence |
+| `AppSettings` | Retention period, launch at login |
+| `HotkeyManager` | Global keyboard shortcut |
 
 ---
 
@@ -143,7 +145,9 @@ Deduplicate → Insert to DB → Update UI → Prune expired
 ## Settings
 
 ### General Tab
+- **Keyboard Shortcut**: Configurable hotkey to show Aurelia (default: Cmd+Shift+V)
 - **History Retention**: 1 Day → 1 Month → Forever (slider)
+- **Launch at Login**: Toggle to start app on login
 - Starred items are never deleted
 
 ### Privacy Tab
