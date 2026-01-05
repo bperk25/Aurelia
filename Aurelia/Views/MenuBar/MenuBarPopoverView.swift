@@ -11,9 +11,49 @@ import Carbon.HIToolbox
 struct MenuBarPopoverView: View {
     private var clipboardManager = ClipboardManager.shared
     @State private var selectedIndex: Int = 0
+    @State private var selectedGroupIndex: Int = 0
+
+    private struct GroupOption: Identifiable {
+        let id: UUID?
+        let name: String
+        let isAnchored: Bool
+        let icon: String
+
+        var identifier: String { id?.uuidString ?? (isAnchored ? "anchored" : "all") }
+    }
+
+    private var groupOptions: [GroupOption] {
+        var options: [GroupOption] = [
+            GroupOption(id: nil, name: "All", isAnchored: false, icon: "tray.full"),
+            GroupOption(id: nil, name: "Anchored", isAnchored: true, icon: "arrow.down.to.line")
+        ]
+        options += clipboardManager.groups.map {
+            GroupOption(id: $0.id, name: $0.name, isAnchored: false, icon: "folder")
+        }
+        return options
+    }
+
+    private var currentGroupOption: GroupOption? {
+        guard selectedGroupIndex < groupOptions.count else { return nil }
+        return groupOptions[selectedGroupIndex]
+    }
 
     private var visibleItems: [ClipboardItem] {
-        Array(clipboardManager.items.prefix(15))
+        let baseItems: [ClipboardItem]
+
+        if let option = currentGroupOption {
+            if option.isAnchored {
+                baseItems = clipboardManager.pinnedItems
+            } else if let groupID = option.id {
+                baseItems = clipboardManager.items(inGroup: groupID)
+            } else {
+                baseItems = Array(clipboardManager.items.prefix(50))
+            }
+        } else {
+            baseItems = Array(clipboardManager.items.prefix(50))
+        }
+
+        return Array(baseItems.prefix(15))
     }
 
     var body: some View {
@@ -82,6 +122,70 @@ struct MenuBarPopoverView: View {
             Divider()
                 .background(AureliaColors.separator)
 
+            // Group selector
+            HStack(spacing: AureliaDesign.Spacing.md) {
+                // Left arrow
+                Button {
+                    navigateGroup(by: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(groupOptions.count > 1 ? AureliaColors.secondaryText : AureliaColors.tertiaryText)
+                }
+                .buttonStyle(.plain)
+                .disabled(groupOptions.count <= 1)
+
+                Spacer()
+
+                // Group selector dropdown
+                Menu {
+                    ForEach(Array(groupOptions.enumerated()), id: \.element.identifier) { index, option in
+                        Button {
+                            selectedGroupIndex = index
+                            selectedIndex = 0
+                        } label: {
+                            Label(option.name, systemImage: option.icon)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: AureliaDesign.Spacing.xs) {
+                        if let option = currentGroupOption {
+                            Image(systemName: option.icon)
+                                .font(.system(size: 9))
+                            Text(option.name)
+                                .font(AureliaDesign.Typography.captionBold)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 7))
+                        }
+                    }
+                    .foregroundStyle(AureliaColors.secondaryText)
+                    .padding(.horizontal, AureliaDesign.Spacing.sm)
+                    .padding(.vertical, 4)
+                    .background(AureliaColors.abyssMedium)
+                    .clipShape(RoundedRectangle(cornerRadius: AureliaDesign.Radius.sm))
+                }
+                .menuStyle(.borderlessButton)
+
+                Spacer()
+
+                // Right arrow
+                Button {
+                    navigateGroup(by: 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(groupOptions.count > 1 ? AureliaColors.secondaryText : AureliaColors.tertiaryText)
+                }
+                .buttonStyle(.plain)
+                .disabled(groupOptions.count <= 1)
+            }
+            .padding(.horizontal, AureliaDesign.Spacing.md)
+            .padding(.vertical, AureliaDesign.Spacing.sm)
+            .background(AureliaColors.abyssMedium.opacity(0.6))
+
+            Divider()
+                .background(AureliaColors.separator)
+
             // Footer with glass effect
             HStack {
                 Button("Preferences...") {
@@ -111,11 +215,14 @@ struct MenuBarPopoverView: View {
         .background(KeyboardHandler(
             onArrowUp: { moveSelection(by: -1) },
             onArrowDown: { moveSelection(by: 1) },
+            onArrowLeft: { navigateGroup(by: -1) },
+            onArrowRight: { navigateGroup(by: 1) },
             onEnter: { selectCurrentItem() },
             onEscape: { MenuBarManager.shared.hidePopover() }
         ))
         .onAppear {
             selectedIndex = 0
+            selectedGroupIndex = 0
         }
     }
 
@@ -124,6 +231,13 @@ struct MenuBarPopoverView: View {
         if newIndex >= 0 && newIndex < visibleItems.count {
             selectedIndex = newIndex
         }
+    }
+
+    private func navigateGroup(by delta: Int) {
+        let count = groupOptions.count
+        guard count > 0 else { return }
+        selectedGroupIndex = (selectedGroupIndex + delta + count) % count
+        selectedIndex = 0
     }
 
     private func selectCurrentItem() {
@@ -150,6 +264,8 @@ struct MenuBarPopoverView: View {
 struct KeyboardHandler: NSViewRepresentable {
     let onArrowUp: () -> Void
     let onArrowDown: () -> Void
+    let onArrowLeft: () -> Void
+    let onArrowRight: () -> Void
     let onEnter: () -> Void
     let onEscape: () -> Void
 
@@ -157,6 +273,8 @@ struct KeyboardHandler: NSViewRepresentable {
         let view = KeyboardView()
         view.onArrowUp = onArrowUp
         view.onArrowDown = onArrowDown
+        view.onArrowLeft = onArrowLeft
+        view.onArrowRight = onArrowRight
         view.onEnter = onEnter
         view.onEscape = onEscape
         DispatchQueue.main.async {
@@ -168,6 +286,8 @@ struct KeyboardHandler: NSViewRepresentable {
     func updateNSView(_ nsView: KeyboardView, context: Context) {
         nsView.onArrowUp = onArrowUp
         nsView.onArrowDown = onArrowDown
+        nsView.onArrowLeft = onArrowLeft
+        nsView.onArrowRight = onArrowRight
         nsView.onEnter = onEnter
         nsView.onEscape = onEscape
     }
@@ -176,6 +296,8 @@ struct KeyboardHandler: NSViewRepresentable {
 class KeyboardView: NSView {
     var onArrowUp: (() -> Void)?
     var onArrowDown: (() -> Void)?
+    var onArrowLeft: (() -> Void)?
+    var onArrowRight: (() -> Void)?
     var onEnter: (() -> Void)?
     var onEscape: (() -> Void)?
 
@@ -187,6 +309,10 @@ class KeyboardView: NSView {
             onArrowUp?()
         case kVK_DownArrow:
             onArrowDown?()
+        case kVK_LeftArrow:
+            onArrowLeft?()
+        case kVK_RightArrow:
+            onArrowRight?()
         case kVK_Return:
             onEnter?()
         case kVK_Escape:

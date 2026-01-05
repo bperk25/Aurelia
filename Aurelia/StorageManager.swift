@@ -11,7 +11,7 @@ final class StorageManager {
     private let imagesDir: URL
     private let dbPath: URL
 
-    private let currentSchemaVersion = 2
+    private let currentSchemaVersion = 3
 
     private init() {
         // Set up directories - now using "Aurelia"
@@ -98,6 +98,14 @@ final class StorageManager {
             CREATE TABLE IF NOT EXISTS schema_version (
                 version INTEGER PRIMARY KEY
             );
+
+            CREATE TABLE IF NOT EXISTS groups (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_groups_sort ON groups(sort_order);
             """
 
         if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
@@ -121,6 +129,20 @@ final class StorageManager {
             }
 
             setSchemaVersion(2)
+        }
+
+        if storedVersion < 3 {
+            // Add group_id column to clipboard_items
+            let migrations = [
+                "ALTER TABLE clipboard_items ADD COLUMN group_id TEXT"
+            ]
+
+            for sql in migrations {
+                sqlite3_exec(db, sql, nil, nil, nil)
+                // Ignore errors - column may already exist
+            }
+
+            setSchemaVersion(3)
         }
     }
 
@@ -201,8 +223,8 @@ final class StorageManager {
 
         let sql = """
             INSERT OR REPLACE INTO clipboard_items
-            (id, content_type, text_content, image_filename, file_paths, timestamp, program_name, is_pinned)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (id, content_type, text_content, image_filename, file_paths, timestamp, program_name, is_pinned, group_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
 
         var stmt: OpaquePointer?
@@ -232,6 +254,12 @@ final class StorageManager {
             sqlite3_bind_text(stmt, 7, item.programName, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
             sqlite3_bind_int(stmt, 8, item.isPinned ? 1 : 0)
 
+            if let groupID = item.groupID {
+                sqlite3_bind_text(stmt, 9, groupID.uuidString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            } else {
+                sqlite3_bind_null(stmt, 9)
+            }
+
             if sqlite3_step(stmt) != SQLITE_DONE {
                 print("Error inserting item: \(String(cString: sqlite3_errmsg(db)))")
             }
@@ -242,7 +270,7 @@ final class StorageManager {
     func fetchAll() -> [ClipboardItem] {
         var items: [ClipboardItem] = []
 
-        let sql = "SELECT id, content_type, text_content, image_filename, file_paths, timestamp, program_name, is_pinned FROM clipboard_items ORDER BY timestamp DESC"
+        let sql = "SELECT id, content_type, text_content, image_filename, file_paths, timestamp, program_name, is_pinned, group_id FROM clipboard_items ORDER BY timestamp DESC"
 
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
@@ -271,6 +299,12 @@ final class StorageManager {
         let programName = String(cString: programNameStr)
         let isPinned = sqlite3_column_int(stmt, 7) == 1
 
+        // Parse group_id (column 8) - may be NULL
+        var groupID: UUID? = nil
+        if let groupIDPtr = sqlite3_column_text(stmt, 8) {
+            groupID = UUID(uuidString: String(cString: groupIDPtr))
+        }
+
         let content: ClipboardContent
         switch contentType {
         case "text":
@@ -290,7 +324,7 @@ final class StorageManager {
             return nil
         }
 
-        return ClipboardItem(id: id, content: content, timestamp: timestamp, programName: programName, isPinned: isPinned)
+        return ClipboardItem(id: id, content: content, timestamp: timestamp, programName: programName, isPinned: isPinned, groupID: groupID)
     }
 
     func delete(_ item: ClipboardItem) {
@@ -344,7 +378,7 @@ final class StorageManager {
     func findByContent(_ content: ClipboardContent) -> ClipboardItem? {
         switch content {
         case .text(let text):
-            let sql = "SELECT id, content_type, text_content, image_filename, file_paths, timestamp, program_name, is_pinned FROM clipboard_items WHERE content_type = 'text' AND text_content = ?"
+            let sql = "SELECT id, content_type, text_content, image_filename, file_paths, timestamp, program_name, is_pinned, group_id FROM clipboard_items WHERE content_type = 'text' AND text_content = ?"
             var stmt: OpaquePointer?
             if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
                 sqlite3_bind_text(stmt, 1, text, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
@@ -358,7 +392,7 @@ final class StorageManager {
             return nil
 
         case .image(let data):
-            let sql = "SELECT id, content_type, text_content, image_filename, file_paths, timestamp, program_name, is_pinned FROM clipboard_items WHERE content_type = 'image'"
+            let sql = "SELECT id, content_type, text_content, image_filename, file_paths, timestamp, program_name, is_pinned, group_id FROM clipboard_items WHERE content_type = 'image'"
             var stmt: OpaquePointer?
             if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -377,7 +411,7 @@ final class StorageManager {
 
         case .file(let urls):
             let pathsString = urls.map { $0.path }.joined(separator: "\n")
-            let sql = "SELECT id, content_type, text_content, image_filename, file_paths, timestamp, program_name, is_pinned FROM clipboard_items WHERE content_type = 'file' AND file_paths = ?"
+            let sql = "SELECT id, content_type, text_content, image_filename, file_paths, timestamp, program_name, is_pinned, group_id FROM clipboard_items WHERE content_type = 'file' AND file_paths = ?"
             var stmt: OpaquePointer?
             if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
                 sqlite3_bind_text(stmt, 1, pathsString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
@@ -412,6 +446,92 @@ final class StorageManager {
             sqlite3_step(stmt)
         }
         sqlite3_finalize(stmt)
+    }
+
+    func updateItemGroup(itemID: UUID, groupID: UUID?) {
+        let sql = "UPDATE clipboard_items SET group_id = ? WHERE id = ?"
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            if let groupID = groupID {
+                sqlite3_bind_text(stmt, 1, groupID.uuidString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            } else {
+                sqlite3_bind_null(stmt, 1)
+            }
+            sqlite3_bind_text(stmt, 2, itemID.uuidString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+    }
+
+    // MARK: - Groups CRUD
+
+    func insertGroup(_ group: ClipboardGroup) {
+        let sql = "INSERT OR REPLACE INTO groups (id, name, created_at, sort_order) VALUES (?, ?, ?, ?)"
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, group.id.uuidString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 2, group.name, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_double(stmt, 3, group.createdAt.timeIntervalSince1970)
+            sqlite3_bind_int(stmt, 4, Int32(group.sortOrder))
+            if sqlite3_step(stmt) != SQLITE_DONE {
+                print("Error inserting group: \(String(cString: sqlite3_errmsg(db)))")
+            }
+        }
+        sqlite3_finalize(stmt)
+    }
+
+    func fetchAllGroups() -> [ClipboardGroup] {
+        var groups: [ClipboardGroup] = []
+        let sql = "SELECT id, name, created_at, sort_order FROM groups ORDER BY sort_order ASC"
+
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let idPtr = sqlite3_column_text(stmt, 0),
+                   let namePtr = sqlite3_column_text(stmt, 1),
+                   let id = UUID(uuidString: String(cString: idPtr)) {
+                    let name = String(cString: namePtr)
+                    let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 2))
+                    let sortOrder = Int(sqlite3_column_int(stmt, 3))
+                    let group = ClipboardGroup(id: id, name: name, createdAt: createdAt, sortOrder: sortOrder)
+                    groups.append(group)
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return groups
+    }
+
+    func updateGroup(_ group: ClipboardGroup) {
+        let sql = "UPDATE groups SET name = ?, sort_order = ? WHERE id = ?"
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, group.name, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_int(stmt, 2, Int32(group.sortOrder))
+            sqlite3_bind_text(stmt, 3, group.id.uuidString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+    }
+
+    func deleteGroup(id: UUID) {
+        // First, remove group_id from all items in this group
+        let updateSQL = "UPDATE clipboard_items SET group_id = NULL WHERE group_id = ?"
+        var updateStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, updateSQL, -1, &updateStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(updateStmt, 1, id.uuidString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_step(updateStmt)
+        }
+        sqlite3_finalize(updateStmt)
+
+        // Then delete the group
+        let deleteSQL = "DELETE FROM groups WHERE id = ?"
+        var deleteStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, deleteSQL, -1, &deleteStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(deleteStmt, 1, id.uuidString, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_step(deleteStmt)
+        }
+        sqlite3_finalize(deleteStmt)
     }
 
     // MARK: - Ignored Apps

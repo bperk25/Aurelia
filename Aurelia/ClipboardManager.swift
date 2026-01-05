@@ -6,6 +6,7 @@ final class ClipboardManager {
     static let shared = ClipboardManager()
 
     private(set) var items: [ClipboardItem] = []
+    private(set) var groups: [ClipboardGroup] = []
 
     private var timer: Timer?
     private var lastChangeCount: Int = 0
@@ -31,6 +32,7 @@ final class ClipboardManager {
 
     private init() {
         loadItems()
+        loadGroups()
         lastChangeCount = pasteboard.changeCount
     }
 
@@ -215,6 +217,53 @@ final class ClipboardManager {
 
     var pinnedItems: [ClipboardItem] {
         items.filter { $0.isPinned }
+    }
+
+    func items(inGroup groupID: UUID) -> [ClipboardItem] {
+        items.filter { $0.groupID == groupID }
+    }
+
+    // MARK: - Group Management
+
+    @discardableResult
+    func createGroup(name: String) -> ClipboardGroup {
+        let sortOrder = groups.count
+        let group = ClipboardGroup(name: name, sortOrder: sortOrder)
+        storage.insertGroup(group)
+        groups.append(group)
+        return group
+    }
+
+    func renameGroup(_ group: ClipboardGroup, to newName: String) {
+        guard let index = groups.firstIndex(where: { $0.id == group.id }) else { return }
+        groups[index].name = newName
+        storage.updateGroup(groups[index])
+    }
+
+    func deleteGroup(_ group: ClipboardGroup) {
+        storage.deleteGroup(id: group.id)
+        groups.removeAll { $0.id == group.id }
+
+        // Update in-memory items to remove the group reference
+        for index in items.indices where items[index].groupID == group.id {
+            items[index].groupID = nil
+        }
+    }
+
+    func assignItemToGroup(_ item: ClipboardItem, groupID: UUID?) {
+        storage.updateItemGroup(itemID: item.id, groupID: groupID)
+
+        if let index = items.firstIndex(where: { $0.id == item.id }) {
+            items[index].groupID = groupID
+        }
+    }
+
+    func removeItemFromGroup(_ item: ClipboardItem) {
+        assignItemToGroup(item, groupID: nil)
+    }
+
+    private func loadGroups() {
+        groups = storage.fetchAllGroups()
     }
 
     // MARK: - Persistence

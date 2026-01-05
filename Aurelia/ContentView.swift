@@ -8,10 +8,15 @@ struct ContentView: View {
     @State private var selectedFilter: ContentTypeFilter = .all
     @State private var selectedSidebarItem: SidebarItem = .all
     @State private var showingClearConfirmation = false
+    @State private var showingCreateGroupSheet = false
+    @State private var newGroupName = ""
+    @State private var groupToRename: ClipboardGroup?
+    @State private var renameGroupName = ""
 
     enum SidebarItem: Hashable {
         case all
         case starred
+        case group(UUID)
     }
 
     var filteredItems: [ClipboardItem] {
@@ -22,6 +27,8 @@ struct ContentView: View {
             items = clipboardManager.items
         case .starred:
             items = clipboardManager.pinnedItems
+        case .group(let groupID):
+            items = clipboardManager.items(inGroup: groupID)
         }
 
         return clipboardManager.filteredItems(searchText: searchText, contentType: selectedFilter)
@@ -29,6 +36,7 @@ struct ContentView: View {
                 switch selectedSidebarItem {
                 case .all: return true
                 case .starred: return item.isPinned
+                case .group(let groupID): return item.groupID == groupID
                 }
             }
     }
@@ -50,10 +58,84 @@ struct ContentView: View {
                     .foregroundStyle(AureliaColors.anchored)
                     .tag(SidebarItem.starred)
                 }
+
+                Section {
+                    ForEach(clipboardManager.groups) { group in
+                        Label(group.name, systemImage: "folder")
+                            .tag(SidebarItem.group(group.id))
+                            .contextMenu {
+                                Button {
+                                    groupToRename = group
+                                    renameGroupName = group.name
+                                } label: {
+                                    Label("Rename", systemImage: "pencil")
+                                }
+
+                                Divider()
+
+                                Button(role: .destructive) {
+                                    clipboardManager.deleteGroup(group)
+                                    if case .group(let id) = selectedSidebarItem, id == group.id {
+                                        selectedSidebarItem = .all
+                                    }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            .onDrop(of: [.text], isTargeted: nil) { providers in
+                                handleDrop(providers: providers, toGroup: group.id)
+                            }
+                    }
+                } header: {
+                    HStack {
+                        Text("Groups")
+                        Spacer()
+                        Button {
+                            showingCreateGroupSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 12))
+                                .foregroundStyle(AureliaColors.secondaryText)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
             .listStyle(.sidebar)
             .frame(minWidth: 180)
             .background(AureliaColors.sidebarBackground)
+            .sheet(isPresented: $showingCreateGroupSheet) {
+                CreateGroupSheet(
+                    groupName: $newGroupName,
+                    onCreate: {
+                        if !newGroupName.isEmpty {
+                            clipboardManager.createGroup(name: newGroupName)
+                            newGroupName = ""
+                        }
+                        showingCreateGroupSheet = false
+                    },
+                    onCancel: {
+                        newGroupName = ""
+                        showingCreateGroupSheet = false
+                    }
+                )
+            }
+            .sheet(item: $groupToRename) { group in
+                RenameGroupSheet(
+                    groupName: $renameGroupName,
+                    onRename: {
+                        if !renameGroupName.isEmpty {
+                            clipboardManager.renameGroup(group, to: renameGroupName)
+                        }
+                        groupToRename = nil
+                        renameGroupName = ""
+                    },
+                    onCancel: {
+                        groupToRename = nil
+                        renameGroupName = ""
+                    }
+                )
+            }
         } detail: {
             // Main content
             VStack(spacing: 0) {
@@ -168,12 +250,15 @@ struct ContentView: View {
     private var emptyStateView: some View {
         VStack(spacing: AureliaDesign.Spacing.md) {
             Group {
-                if selectedSidebarItem == .starred {
+                switch selectedSidebarItem {
+                case .starred:
                     Image("AnchorIcon")
                         .renderingMode(.template)
                         .resizable()
                         .frame(width: 48, height: 48)
-                } else {
+                case .group:
+                    Image(systemName: "folder")
+                case .all:
                     Image(systemName: "water.waves")
                 }
             }
@@ -196,7 +281,25 @@ struct ContentView: View {
             return "The deep awaits..."
         case .starred:
             return "Anchor items to keep them safe"
+        case .group:
+            return "Drag items here to add them to this group"
         }
+    }
+
+    private func handleDrop(providers: [NSItemProvider], toGroup groupID: UUID) -> Bool {
+        for provider in providers {
+            _ = provider.loadObject(ofClass: String.self) { itemIDString, _ in
+                guard let itemIDString = itemIDString,
+                      let itemID = UUID(uuidString: itemIDString) else { return }
+
+                DispatchQueue.main.async {
+                    if let item = clipboardManager.items.first(where: { $0.id == itemID }) {
+                        clipboardManager.assignItemToGroup(item, groupID: groupID)
+                    }
+                }
+            }
+        }
+        return true
     }
 }
 
@@ -278,6 +381,7 @@ struct ClipboardItemCard: View {
         .onTapGesture {
             clipboardManager.copyToClipboard(item)
         }
+        .draggable(item.id.uuidString)
         .contextMenu {
             contextMenuItems
         }
@@ -378,11 +482,98 @@ struct ClipboardItemCard: View {
 
         Divider()
 
+        Menu("Add to Group") {
+            Button {
+                clipboardManager.removeItemFromGroup(item)
+            } label: {
+                Label("None", systemImage: item.groupID == nil ? "checkmark" : "")
+            }
+            .disabled(item.groupID == nil)
+
+            if !clipboardManager.groups.isEmpty {
+                Divider()
+            }
+
+            ForEach(clipboardManager.groups) { group in
+                Button {
+                    clipboardManager.assignItemToGroup(item, groupID: group.id)
+                } label: {
+                    Label(group.name, systemImage: item.groupID == group.id ? "checkmark" : "")
+                }
+                .disabled(item.groupID == group.id)
+            }
+
+            if clipboardManager.groups.isEmpty {
+                Text("No groups created")
+                    .foregroundStyle(.secondary)
+            }
+        }
+
+        Divider()
+
         Button(role: .destructive) {
             clipboardManager.delete(item)
         } label: {
             Label("Delete", systemImage: "trash")
         }
+    }
+}
+
+// MARK: - Create Group Sheet
+
+struct CreateGroupSheet: View {
+    @Binding var groupName: String
+    let onCreate: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: AureliaDesign.Spacing.lg) {
+            Text("Create Group")
+                .font(AureliaDesign.Typography.headline)
+
+            TextField("Group name", text: $groupName)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 250)
+
+            HStack(spacing: AureliaDesign.Spacing.md) {
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.bordered)
+
+                Button("Create", action: onCreate)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(groupName.isEmpty)
+            }
+        }
+        .padding(AureliaDesign.Spacing.xl)
+    }
+}
+
+// MARK: - Rename Group Sheet
+
+struct RenameGroupSheet: View {
+    @Binding var groupName: String
+    let onRename: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: AureliaDesign.Spacing.lg) {
+            Text("Rename Group")
+                .font(AureliaDesign.Typography.headline)
+
+            TextField("Group name", text: $groupName)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 250)
+
+            HStack(spacing: AureliaDesign.Spacing.md) {
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.bordered)
+
+                Button("Rename", action: onRename)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(groupName.isEmpty)
+            }
+        }
+        .padding(AureliaDesign.Spacing.xl)
     }
 }
 

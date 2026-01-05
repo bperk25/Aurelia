@@ -9,21 +9,24 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
     var timestamp: Date
     let programName: String
     var isPinned: Bool
+    var groupID: UUID?
 
-    init(content: ClipboardContent, timestamp: Date = Date(), programName: String, isPinned: Bool = false) {
+    init(content: ClipboardContent, timestamp: Date = Date(), programName: String, isPinned: Bool = false, groupID: UUID? = nil) {
         self.id = UUID()
         self.content = content
         self.timestamp = timestamp
         self.programName = programName
         self.isPinned = isPinned
+        self.groupID = groupID
     }
 
-    init(id: UUID, content: ClipboardContent, timestamp: Date, programName: String, isPinned: Bool = false) {
+    init(id: UUID, content: ClipboardContent, timestamp: Date, programName: String, isPinned: Bool = false, groupID: UUID? = nil) {
         self.id = id
         self.content = content
         self.timestamp = timestamp
         self.programName = programName
         self.isPinned = isPinned
+        self.groupID = groupID
     }
 
     static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {
@@ -31,7 +34,24 @@ struct ClipboardItem: Identifiable, Codable, Equatable {
         lhs.content == rhs.content &&
         lhs.timestamp == rhs.timestamp &&
         lhs.programName == rhs.programName &&
-        lhs.isPinned == rhs.isPinned
+        lhs.isPinned == rhs.isPinned &&
+        lhs.groupID == rhs.groupID
+    }
+}
+
+// MARK: - ClipboardGroup
+
+struct ClipboardGroup: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var name: String
+    let createdAt: Date
+    var sortOrder: Int
+
+    init(id: UUID = UUID(), name: String, createdAt: Date = Date(), sortOrder: Int = 0) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.sortOrder = sortOrder
     }
 }
 

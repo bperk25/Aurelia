@@ -164,6 +164,12 @@ final class FloatingPanelManager {
             case kVK_DownArrow:
                 NotificationCenter.default.post(name: .floatingPanelArrowDown, object: nil)
                 return nil
+            case kVK_LeftArrow:
+                NotificationCenter.default.post(name: .floatingPanelArrowLeft, object: nil)
+                return nil
+            case kVK_RightArrow:
+                NotificationCenter.default.post(name: .floatingPanelArrowRight, object: nil)
+                return nil
             case kVK_Return:
                 NotificationCenter.default.post(name: .floatingPanelEnter, object: nil)
                 return nil
@@ -278,6 +284,12 @@ final class FloatingPanelManager {
         case kVK_DownArrow:
             NotificationCenter.default.post(name: .floatingPanelArrowDown, object: nil)
             return true
+        case kVK_LeftArrow:
+            NotificationCenter.default.post(name: .floatingPanelArrowLeft, object: nil)
+            return true
+        case kVK_RightArrow:
+            NotificationCenter.default.post(name: .floatingPanelArrowRight, object: nil)
+            return true
         case kVK_Return:
             NotificationCenter.default.post(name: .floatingPanelEnter, object: nil)
             return true
@@ -323,6 +335,8 @@ extension Notification.Name {
     static let floatingPanelWillShow = Notification.Name("floatingPanelWillShow")
     static let floatingPanelArrowUp = Notification.Name("floatingPanelArrowUp")
     static let floatingPanelArrowDown = Notification.Name("floatingPanelArrowDown")
+    static let floatingPanelArrowLeft = Notification.Name("floatingPanelArrowLeft")
+    static let floatingPanelArrowRight = Notification.Name("floatingPanelArrowRight")
     static let floatingPanelEnter = Notification.Name("floatingPanelEnter")
     static let floatingPanelCharacter = Notification.Name("floatingPanelCharacter")
     static let floatingPanelBackspace = Notification.Name("floatingPanelBackspace")
@@ -339,13 +353,52 @@ struct FloatingClipboardView: View {
     @State private var clipboardManager = ClipboardManager.shared
     @State private var selectedIndex: Int = 0
     @State private var searchText: String = ""
+    @State private var selectedGroupIndex: Int = 0
+
+    private struct GroupOption: Identifiable {
+        let id: UUID?
+        let name: String
+        let isAnchored: Bool
+        let icon: String
+
+        var identifier: String { id?.uuidString ?? (isAnchored ? "anchored" : "all") }
+    }
+
+    private var groupOptions: [GroupOption] {
+        var options: [GroupOption] = [
+            GroupOption(id: nil, name: "All", isAnchored: false, icon: "tray.full"),
+            GroupOption(id: nil, name: "Anchored", isAnchored: true, icon: "arrow.down.to.line")
+        ]
+        options += clipboardManager.groups.map {
+            GroupOption(id: $0.id, name: $0.name, isAnchored: false, icon: "folder")
+        }
+        return options
+    }
+
+    private var currentGroupOption: GroupOption? {
+        guard selectedGroupIndex < groupOptions.count else { return nil }
+        return groupOptions[selectedGroupIndex]
+    }
 
     private var visibleItems: [ClipboardItem] {
-        let items = clipboardManager.items.prefix(50)
-        if searchText.isEmpty {
-            return Array(items.prefix(15))
+        let baseItems: [ClipboardItem]
+
+        if let option = currentGroupOption {
+            if option.isAnchored {
+                baseItems = clipboardManager.pinnedItems
+            } else if let groupID = option.id {
+                baseItems = clipboardManager.items(inGroup: groupID)
+            } else {
+                baseItems = Array(clipboardManager.items.prefix(50))
+            }
+        } else {
+            baseItems = Array(clipboardManager.items.prefix(50))
         }
-        let filtered = items.filter { item in
+
+        if searchText.isEmpty {
+            return Array(baseItems.prefix(15))
+        }
+        let filtered = baseItems.filter { item in
             switch item.content {
             case .text(let text):
                 return text.localizedCaseInsensitiveContains(searchText)
@@ -477,18 +530,63 @@ struct FloatingClipboardView: View {
             Divider()
                 .background(AureliaColors.separator)
 
-            // Footer hint
-            HStack {
-                Text("↑↓ Navigate")
-                    .foregroundStyle(AureliaColors.tertiaryText)
+            // Group selector footer
+            HStack(spacing: AureliaDesign.Spacing.md) {
+                // Left arrow
+                Button {
+                    navigateGroup(by: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(groupOptions.count > 1 ? AureliaColors.secondaryText : AureliaColors.tertiaryText)
+                }
+                .buttonStyle(.plain)
+                .disabled(groupOptions.count <= 1)
+
                 Spacer()
-                Text("↩ Paste")
-                    .foregroundStyle(AureliaColors.tertiaryText)
+
+                // Group selector dropdown
+                Menu {
+                    ForEach(Array(groupOptions.enumerated()), id: \.element.identifier) { index, option in
+                        Button {
+                            selectedGroupIndex = index
+                            selectedIndex = 0
+                        } label: {
+                            Label(option.name, systemImage: option.icon)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: AureliaDesign.Spacing.xs) {
+                        if let option = currentGroupOption {
+                            Image(systemName: option.icon)
+                                .font(.system(size: 10))
+                            Text(option.name)
+                                .font(AureliaDesign.Typography.captionBold)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 8))
+                        }
+                    }
+                    .foregroundStyle(AureliaColors.secondaryText)
+                    .padding(.horizontal, AureliaDesign.Spacing.sm)
+                    .padding(.vertical, AureliaDesign.Spacing.xs)
+                    .background(AureliaColors.abyssMedium)
+                    .clipShape(RoundedRectangle(cornerRadius: AureliaDesign.Radius.sm))
+                }
+                .menuStyle(.borderlessButton)
+
                 Spacer()
-                Text("esc Close")
-                    .foregroundStyle(AureliaColors.tertiaryText)
+
+                // Right arrow
+                Button {
+                    navigateGroup(by: 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(groupOptions.count > 1 ? AureliaColors.secondaryText : AureliaColors.tertiaryText)
+                }
+                .buttonStyle(.plain)
+                .disabled(groupOptions.count <= 1)
             }
-            .font(AureliaDesign.Typography.caption)
             .padding(AureliaDesign.Spacing.sm)
             .background(AureliaColors.abyssMedium.opacity(0.8))
         }
@@ -502,6 +600,7 @@ struct FloatingClipboardView: View {
         .preferredColorScheme(.dark)
         .onReceive(NotificationCenter.default.publisher(for: .floatingPanelWillShow)) { _ in
             selectedIndex = 0
+            selectedGroupIndex = 0
             searchText = ""
         }
         .onReceive(NotificationCenter.default.publisher(for: .floatingPanelArrowUp)) { _ in
@@ -509,6 +608,12 @@ struct FloatingClipboardView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .floatingPanelArrowDown)) { _ in
             moveSelection(by: 1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .floatingPanelArrowLeft)) { _ in
+            navigateGroup(by: -1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .floatingPanelArrowRight)) { _ in
+            navigateGroup(by: 1)
         }
         .onReceive(NotificationCenter.default.publisher(for: .floatingPanelEnter)) { _ in
             selectCurrentItem()
@@ -532,6 +637,13 @@ struct FloatingClipboardView: View {
         if newIndex >= 0 && newIndex < visibleItems.count {
             selectedIndex = newIndex
         }
+    }
+
+    private func navigateGroup(by delta: Int) {
+        let count = groupOptions.count
+        guard count > 0 else { return }
+        selectedGroupIndex = (selectedGroupIndex + delta + count) % count
+        selectedIndex = 0
     }
 
     private func selectCurrentItem() {
