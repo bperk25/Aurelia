@@ -105,28 +105,43 @@ final class OpenGraphManager {
 
     /// Extract og:image URL from HTML
     private func extractOGImageURL(from html: String, baseURL: URL) -> URL? {
-        // Look for og:image meta tag
-        // Pattern: <meta property="og:image" content="..."/>
+        // Look for og:image meta tag - supports both property and name attributes
+        // Pattern: <meta property="og:image" content="..."/> or <meta name="og:image" content="..."/>
         let patterns = [
-            #"<meta[^>]*property=[\"']og:image[\"'][^>]*content=[\"']([^\"']+)[\"']"#,
-            #"<meta[^>]*content=[\"']([^\"']+)[\"'][^>]*property=[\"']og:image[\"']"#
+            #"<meta[^>]*(?:property|name)\s*=\s*[\"']og:image[\"'][^>]*content\s*=\s*[\"']([^\"']+)[\"']"#,
+            #"<meta[^>]*content\s*=\s*[\"']([^\"']+)[\"'][^>]*(?:property|name)\s*=\s*[\"']og:image[\"']"#
         ]
 
         for pattern in patterns {
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
                let match = regex.firstMatch(in: html, options: [], range: NSRange(html.startIndex..., in: html)),
                let range = Range(match.range(at: 1), in: html) {
-                let imageURLString = String(html[range])
+                var imageURLString = String(html[range])
 
-                // Handle relative URLs
+                // Decode HTML entities
+                imageURLString = imageURLString
+                    .replacingOccurrences(of: "&amp;", with: "&")
+                    .replacingOccurrences(of: "&lt;", with: "<")
+                    .replacingOccurrences(of: "&gt;", with: ">")
+                    .replacingOccurrences(of: "&quot;", with: "\"")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                // Handle different URL formats
                 if imageURLString.hasPrefix("//") {
+                    // Protocol-relative URL
                     return URL(string: "https:" + imageURLString)
                 } else if imageURLString.hasPrefix("/") {
+                    // Root-relative URL
                     var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
                     components?.path = imageURLString
+                    components?.query = nil
                     return components?.url
                 } else if imageURLString.hasPrefix("http") {
+                    // Absolute URL
                     return URL(string: imageURLString)
+                } else {
+                    // Relative path - resolve against base URL
+                    return URL(string: imageURLString, relativeTo: baseURL)?.absoluteURL
                 }
             }
         }

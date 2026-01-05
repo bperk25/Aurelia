@@ -826,7 +826,7 @@ struct FloatingThumbnailRow: View {
     var onDelete: (() -> Void)? = nil
 
     @State private var isHovering = false
-    @State private var ogManager = OpenGraphManager.shared
+    private var ogManager: OpenGraphManager { OpenGraphManager.shared }
 
     private var isHighlighted: Bool {
         isSelected || isHovering
