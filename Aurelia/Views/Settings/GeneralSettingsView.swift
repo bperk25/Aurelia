@@ -51,6 +51,25 @@ struct GeneralSettingsView: View {
             }
 
             Section {
+                Picker("Panel View", selection: Binding(
+                    get: { settings.panelViewMode },
+                    set: { settings.panelViewMode = $0 }
+                )) {
+                    ForEach(PanelViewMode.allCases, id: \.self) { mode in
+                        Label(mode.displayName, systemImage: mode.icon)
+                            .tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Quick Panel Appearance")
+            } footer: {
+                Text("Choose how clipboard items appear in the quick panel (triggered by shortcut).")
+                    .font(AureliaDesign.Typography.caption)
+                    .foregroundStyle(AureliaColors.secondaryText)
+            }
+
+            Section {
                 VStack(alignment: .leading, spacing: AureliaDesign.Spacing.md) {
                     Text("Keep clipboard items for:")
                         .font(AureliaDesign.Typography.body)

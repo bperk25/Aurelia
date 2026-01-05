@@ -136,9 +136,11 @@ struct MenuBarPopoverView: View {
         MenuBarManager.shared.hidePopover()
 
         // Return focus to previous app and paste
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             MenuBarManager.shared.activatePreviousApp()
-            HotkeyManager.simulatePaste()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                HotkeyManager.simulatePaste()
+            }
         }
     }
 }

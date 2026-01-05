@@ -1,6 +1,27 @@
 import Foundation
 import ServiceManagement
 
+// MARK: - Panel View Mode
+
+enum PanelViewMode: String, CaseIterable {
+    case list = "list"
+    case thumbnail = "thumbnail"
+
+    var displayName: String {
+        switch self {
+        case .list: return "List"
+        case .thumbnail: return "Thumbnail"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .list: return "list.bullet"
+        case .thumbnail: return "square.grid.2x2"
+        }
+    }
+}
+
 // MARK: - Retention Period
 
 enum RetentionPeriod: Int, CaseIterable {
@@ -39,10 +60,17 @@ final class AppSettings {
 
     private let defaults = UserDefaults.standard
     private let retentionKey = "clipboardRetentionPeriod"
+    private let panelViewModeKey = "panelViewMode"
 
     var retentionPeriod: RetentionPeriod {
         didSet {
             defaults.set(retentionPeriod.rawValue, forKey: retentionKey)
+        }
+    }
+
+    var panelViewMode: PanelViewMode {
+        didSet {
+            defaults.set(panelViewMode.rawValue, forKey: panelViewModeKey)
         }
     }
 
@@ -70,6 +98,14 @@ final class AppSettings {
             self.retentionPeriod = .oneWeek
         } else {
             self.retentionPeriod = RetentionPeriod(rawValue: savedValue) ?? .oneWeek
+        }
+
+        // Load panel view mode (default to thumbnail)
+        if let savedViewMode = defaults.string(forKey: panelViewModeKey),
+           let viewMode = PanelViewMode(rawValue: savedViewMode) {
+            self.panelViewMode = viewMode
+        } else {
+            self.panelViewMode = .thumbnail
         }
     }
 
