@@ -13,11 +13,22 @@ final class HotkeyManager {
     static let shared = HotkeyManager()
 
     private let defaults = UserDefaults.standard
+
+    // Panel shortcut keys
     private let keyCodeKey = "hotkeyKeyCode"
     private let modifiersKey = "hotkeyModifiers"
 
+    // Queue shortcut keys
+    private let queueKeyCodeKey = "queueHotkeyKeyCode"
+    private let queueModifiersKey = "queueHotkeyModifiers"
+
     private var hotKeyRef: EventHotKeyRef?
-    private static let hotKeyID = EventHotKeyID(signature: OSType(0x4155524C), id: 1) // "AURL"
+    private var queueHotKeyRef: EventHotKeyRef?
+
+    private static let hotKeyID = EventHotKeyID(signature: OSType(0x4155524C), id: 1) // "AURL" - Panel
+    private static let queueHotKeyID = EventHotKeyID(signature: OSType(0x4155524C), id: 2) // "AURL" - Queue
+
+    // MARK: - Panel Shortcut
 
     var keyCode: UInt16 {
         didSet {
@@ -39,22 +50,38 @@ final class HotkeyManager {
 
     var shortcutDisplayString: String {
         guard isEnabled else { return "Not Set" }
-
-        var parts: [String] = []
-
-        if modifiers.contains(.control) { parts.append("⌃") }
-        if modifiers.contains(.option) { parts.append("⌥") }
-        if modifiers.contains(.shift) { parts.append("⇧") }
-        if modifiers.contains(.command) { parts.append("⌘") }
-
-        if let keyString = keyCodeToString(keyCode) {
-            parts.append(keyString)
-        }
-
-        return parts.joined()
+        return formatShortcut(keyCode: keyCode, modifiers: modifiers)
     }
 
+    // MARK: - Queue Shortcut
+
+    var queueKeyCode: UInt16 {
+        didSet {
+            defaults.set(Int(queueKeyCode), forKey: queueKeyCodeKey)
+            restartQueueMonitoring()
+        }
+    }
+
+    var queueModifiers: NSEvent.ModifierFlags {
+        didSet {
+            defaults.set(queueModifiers.rawValue, forKey: queueModifiersKey)
+            restartQueueMonitoring()
+        }
+    }
+
+    var isQueueEnabled: Bool {
+        queueKeyCode != 0
+    }
+
+    var queueShortcutDisplayString: String {
+        guard isQueueEnabled else { return "Not Set" }
+        return formatShortcut(keyCode: queueKeyCode, modifiers: queueModifiers)
+    }
+
+    // MARK: - Initialization
+
     private init() {
+        // Load panel shortcut
         let savedKeyCode = defaults.integer(forKey: keyCodeKey)
         let savedModifiers = defaults.integer(forKey: modifiersKey)
 
@@ -67,8 +94,36 @@ final class HotkeyManager {
             self.modifiers = NSEvent.ModifierFlags(rawValue: UInt(savedModifiers))
         }
 
+        // Load queue shortcut
+        let savedQueueKeyCode = defaults.integer(forKey: queueKeyCodeKey)
+        let savedQueueModifiers = defaults.integer(forKey: queueModifiersKey)
+
+        if savedQueueKeyCode == 0 && savedQueueModifiers == 0 {
+            // Default: Cmd+Shift+C
+            self.queueKeyCode = UInt16(kVK_ANSI_C)
+            self.queueModifiers = [.command, .shift]
+        } else {
+            self.queueKeyCode = UInt16(savedQueueKeyCode)
+            self.queueModifiers = NSEvent.ModifierFlags(rawValue: UInt(savedQueueModifiers))
+        }
+
         // Install the global event handler
         installEventHandler()
+    }
+
+    private func formatShortcut(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> String {
+        var parts: [String] = []
+
+        if modifiers.contains(.control) { parts.append("⌃") }
+        if modifiers.contains(.option) { parts.append("⌥") }
+        if modifiers.contains(.shift) { parts.append("⇧") }
+        if modifiers.contains(.command) { parts.append("⌘") }
+
+        if let keyString = keyCodeToString(keyCode) {
+            parts.append(keyString)
+        }
+
+        return parts.joined()
     }
 
     private func installEventHandler() {
@@ -88,9 +143,15 @@ final class HotkeyManager {
                     &hotKeyID
                 )
 
-                if hotKeyID.signature == HotkeyManager.hotKeyID.signature && hotKeyID.id == HotkeyManager.hotKeyID.id {
+                if hotKeyID.signature == HotkeyManager.hotKeyID.signature {
                     DispatchQueue.main.async {
-                        HotkeyManager.shared.toggleMenuBarPopover()
+                        if hotKeyID.id == HotkeyManager.hotKeyID.id {
+                            // Panel shortcut
+                            HotkeyManager.shared.toggleMenuBarPopover()
+                        } else if hotKeyID.id == HotkeyManager.queueHotKeyID.id {
+                            // Queue shortcut
+                            HotkeyManager.shared.toggleQueueMode()
+                        }
                     }
                 }
                 return noErr
@@ -102,13 +163,56 @@ final class HotkeyManager {
         )
     }
 
+    private func toggleQueueMode() {
+        if !PasteQueueManager.shared.isQueueModeActive {
+            // Activate queue mode FIRST, then copy selected text
+            // This way the copied text will be captured into the queue
+            PasteQueueManager.shared.activate()
+            // Small delay to ensure queue mode is active before copy
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.simulateCopy()
+            }
+        } else {
+            PasteQueueManager.shared.deactivate()
+        }
+    }
+
+    /// Simulate Cmd+C to copy selected text
+    private func simulateCopy() {
+        let source = CGEventSource(stateID: .hidSystemState)
+
+        // Key down for Cmd+C
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: true)
+        keyDown?.flags = .maskCommand
+
+        // Key up for Cmd+C
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: false)
+        keyUp?.flags = .maskCommand
+
+        // Post the events
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
+    }
+
+    // MARK: - Panel Hotkey Registration
+
     func startMonitoring() {
+        startPanelMonitoring()
+        startQueueMonitoring()
+    }
+
+    func stopMonitoring() {
+        stopPanelMonitoring()
+        stopQueueMonitoring()
+    }
+
+    private func startPanelMonitoring() {
         guard isEnabled else { return }
         guard hotKeyRef == nil else { return } // Already registered
 
         let carbonModifiers = carbonModifierFlags(from: modifiers)
 
-        var hotKeyID = HotkeyManager.hotKeyID
+        let hotKeyID = HotkeyManager.hotKeyID
         var ref: EventHotKeyRef?
 
         let status = RegisterEventHotKey(
@@ -123,11 +227,11 @@ final class HotkeyManager {
         if status == noErr {
             hotKeyRef = ref
         } else {
-            print("Failed to register hotkey: \(status)")
+            print("Failed to register panel hotkey: \(status)")
         }
     }
 
-    func stopMonitoring() {
+    private func stopPanelMonitoring() {
         if let ref = hotKeyRef {
             UnregisterEventHotKey(ref)
             hotKeyRef = nil
@@ -135,8 +239,47 @@ final class HotkeyManager {
     }
 
     private func restartMonitoring() {
-        stopMonitoring()
-        startMonitoring()
+        stopPanelMonitoring()
+        startPanelMonitoring()
+    }
+
+    // MARK: - Queue Hotkey Registration
+
+    private func startQueueMonitoring() {
+        guard isQueueEnabled else { return }
+        guard queueHotKeyRef == nil else { return } // Already registered
+
+        let carbonModifiers = carbonModifierFlags(from: queueModifiers)
+
+        let hotKeyID = HotkeyManager.queueHotKeyID
+        var ref: EventHotKeyRef?
+
+        let status = RegisterEventHotKey(
+            UInt32(queueKeyCode),
+            carbonModifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &ref
+        )
+
+        if status == noErr {
+            queueHotKeyRef = ref
+        } else {
+            print("Failed to register queue hotkey: \(status)")
+        }
+    }
+
+    private func stopQueueMonitoring() {
+        if let ref = queueHotKeyRef {
+            UnregisterEventHotKey(ref)
+            queueHotKeyRef = nil
+        }
+    }
+
+    private func restartQueueMonitoring() {
+        stopQueueMonitoring()
+        startQueueMonitoring()
     }
 
     private func toggleMenuBarPopover() {
@@ -154,7 +297,20 @@ final class HotkeyManager {
         self.modifiers = []
         defaults.removeObject(forKey: keyCodeKey)
         defaults.removeObject(forKey: modifiersKey)
-        stopMonitoring()
+        stopPanelMonitoring()
+    }
+
+    func setQueueShortcut(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
+        self.queueKeyCode = keyCode
+        self.queueModifiers = modifiers
+    }
+
+    func clearQueueShortcut() {
+        self.queueKeyCode = 0
+        self.queueModifiers = []
+        defaults.removeObject(forKey: queueKeyCodeKey)
+        defaults.removeObject(forKey: queueModifiersKey)
+        stopQueueMonitoring()
     }
 
     /// Convert NSEvent modifier flags to Carbon modifier flags

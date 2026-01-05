@@ -1,69 +1,129 @@
-great! now here is a feature spec. also i have an app icon and a menu icon in my downloads folder. i want the app named Aurelia.
-Now I want to add the following features:
-Core Features to Implement:
-
-Search functionality - Add an intelligent search bar that filters clipboard history in real-time. Should search across text content, and potentially support filtering by content type.
-Content previews - Enhance the existing cards with better visual previews:
-
-Large, clear text previews
-Image thumbnails for copied images
-Link previews with metadata if possible
-File icons/names for copied files
+I want to implement the Paste Queue feature for my Aurelia clipboard manager app. This is an advanced feature that lets users copy multiple items in sequence and paste them back in order.
+Core Behavior:
+Building the Queue:
 
 
-Privacy controls - Add a system to ignore/exclude certain apps from clipboard tracking. Should include:
-
-Settings panel to add apps to an ignore list
-Common password managers pre-configured (1Password, LastPass, Keychain Access, etc.)
-Option to pause clipboard monitoring entirely
-
-
-Pinboards/Collections - Let users save frequently used items:
-
-Create named collections
-Star/favorite items to keep them permanently
-Organize items into custom groups
+User activates Queue mode with keyboard shortcut (default: Cmd+Shift+C, customizable in settings)
+While in Queue mode, each copy operation (Cmd+C) adds the item to the queue instead of just the history
+Items are numbered/ordered in the sequence they were copied
+Visual indicator shows Queue mode is active (maybe menu bar icon changes to show queue state)
+Pasting from Queue:
 
 
-Format control - When pasting, give options to:
-
-Paste as plain text (strip all formatting)
-Keep original formatting
-Maybe a quick toggle or modifier key
-
-
-Content type filtering - Add UI to filter history by type:
-
-All items
-Text only
-Images only
-Links only
-Files only
+Each paste operation (Cmd+V) consumes and pastes the next item in the queue sequence
+First paste → item 1, second paste → item 2, etc.
+Items are removed from the queue after pasting (or marked as used)
+Queue empties when all items have been pasted
+User can exit Queue mode manually to return to normal clipboard behavior
+Queue Management:
 
 
-
-UI/UX Elements:
-
-Menu bar integration - Add a menu bar icon (use a placeholder/generic icon for now like a clipboard symbol). Clicking it should:
-
-Show a dropdown with recent items
-Provide quick access to open the main app
-Show app preferences/settings option
-
-
-Context menus - Right-click on clipboard items should show options:
-
-Copy to clipboard
-Delete item
-Add to collection/favorite
-Copy as plain text
-View full content
+Items can be reordered via drag-and-drop before pasting
+Quick "Flip Order" button to reverse the entire queue sequence
+Items can be removed from queue individually
+Clear entire queue option ("Wash Queue")
+Option to convert queue items back to regular history without pasting
+Queue Preview Window (Floating Panel):
+Window Behavior:
 
 
-Dark mode support - Ensure the app looks good in both light and dark modes with proper color adaptation
-Clean, minimal design - Keep the interface unobtrusive and visually appealing with:
+Draggable floating window that appears when Queue mode is activated
+Stays on top of other windows but doesn't steal focus
+Can be repositioned anywhere on screen - position persists
+Semi-transparent/frosted glass aesthetic (Aurelia vibrancy)
+Shows all queued items in vertical stack
+Visual Design:
 
-Good spacing and padding
-Clear typography
-Smooth transitions/animations
-Visual hierarchy that makes scanning easy
+
+Items connected by glowing electric cyan "tentacle" lines showing the flow/order
+Each item numbered (1, 2, 3...) showing paste sequence
+Current "next to paste" item highlighted with bioluminescent glow
+Items already pasted fade to lower opacity but remain visible (with checkmark or "used" indicator)
+Controls in Panel:
+
+
+Drag handles on each item for reordering
+"Flip Order" button (icon: vertical arrows or tentacle flip symbol) to reverse entire sequence
+Individual delete buttons per item
+"Wash Queue" button to clear everything
+"Exit Queue Mode" button
+Optional: show keyboard shortcut hints
+Thematic Elements :
+Visual Language:
+
+
+Connecting lines between items look like glowing tentacles (electric cyan)
+Lines should pulse subtly or have a flowing gradient animation
+When items are reordered, tentacles should animate smoothly to new positions
+"Flip Order" animation: tentacles twist/rotate as items flip
+Animations:
+
+
+Adding to queue: Item flows in from top with tentacle extending from previous item
+Pasting: Item dissolves/fades with its tentacle retracting
+Reordering: Smooth fluid motion like tentacles moving through water
+Flip: Whole queue rotates 180° with elegant easing
+Terminology:
+
+
+Feature name: "Queue" for clarity
+Clear all: "Wash Queue"
+Status: "X items queued" or "Queue empty"
+Settings Integration:
+Keyboard Shortcut:
+
+
+Default: Cmd+Shift+C to activate Queue mode
+Fully customizable in app preferences
+Prevent conflicts with system shortcuts
+Option to toggle Queue mode on/off vs. hold-to-activate
+Queue Preferences:
+
+
+Auto-clear queue after all items pasted (on/off)
+Keep pasted items visible in queue window (on/off)
+Queue window default position
+Maximum queue size limit (optional)
+Technical Requirements:
+State Management:
+
+
+Track Queue mode active/inactive state
+Maintain ordered list of queued items
+Track which items have been pasted
+Persist queue across app restarts (optional)
+Window Management:
+
+
+NSPanel or floating NSWindow for the queue preview
+Always-on-top behavior (.floatingPanel window level)
+Draggable anywhere on screen
+Remembers position between sessions
+Smooth show/hide animations
+Clipboard Integration:
+
+
+Intercept copy operations when Queue mode is active
+Manage paste operations to pull from queue instead of system clipboard
+Update system clipboard with next queue item on paste
+Handle edge cases (queue empty, app in background, etc.)
+Performance:
+
+
+Smooth drag-and-drop reordering even with many items
+Efficient rendering of tentacle connection lines
+No lag when adding items to queue
+Implementation Plan:
+Please read my existing project to understand the current architecture, then:
+Add Queue mode state management and keyboard shortcut handling
+Create the floating queue preview window with basic layout
+Implement queue building (capturing copies while in Queue mode)
+Implement queue pasting (consuming items in sequence)
+Add drag-and-drop reordering
+Add "Flip Order" functionality
+Apply Aurelia theming (tentacle lines, animations, colors)
+Add settings panel for customization
+Polish animations and edge cases
+Start with the core behavior first, then add the visual flourishes and Aurelia theme elements.
+
+

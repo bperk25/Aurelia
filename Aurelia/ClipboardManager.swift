@@ -99,6 +99,11 @@ final class ClipboardManager {
         storage.insert(newItem)
         items.insert(newItem, at: 0)
 
+        // Add to queue if queue mode is active
+        if PasteQueueManager.shared.isQueueModeActive {
+            PasteQueueManager.shared.addToQueue(newItem)
+        }
+
         // Prune old items
         pruneExpiredItems()
 
