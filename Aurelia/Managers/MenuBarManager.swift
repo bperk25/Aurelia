@@ -35,13 +35,13 @@ final class MenuBarManager {
                 image.size = NSSize(width: 18, height: 18)
                 image.isTemplate = true
                 button.image = image
+                button.imagePosition = .imageOnly
             }
             button.action = #selector(togglePopover)
             button.target = self
 
             // Enable layer-backed view for animations
             button.wantsLayer = true
-            button.layer?.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         }
 
         popover = NSPopover()
