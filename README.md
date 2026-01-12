@@ -2,7 +2,7 @@
 
 A clipboard manager for macOS.
 
-Aurelia captures your clipboard history—text, images, links, and files—so you never lose what you've copied. It lives in your menu bar, ready when you need it.
+Aurelia captures your clipboard history - text, images, links, and files - so you never lose what you've copied. It lives in your menu bar, ready when you need it.
 
 **Requires macOS 15.2+ (Sequoia)**
 
