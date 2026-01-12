@@ -17,6 +17,7 @@ final class FloatingPanelManager {
     private var hostingView: NSHostingView<AnyView>?
     private var localMonitor: Any?
     private var globalMouseMonitor: Any?
+    private var lastViewMode: PanelViewMode?
 
     /// The app that was active before showing the panel
     private var previousApp: NSRunningApplication?
@@ -108,14 +109,19 @@ final class FloatingPanelManager {
         // Update panel size based on current view mode
         let width = panelWidth
         let height = panelHeight
+        let currentViewMode = AppSettings.shared.panelViewMode
 
-        // Update content to reflect current shortcut and view mode
-        updatePanelContent()
+        // Only recreate view if needed (first time or view mode changed)
+        // This preserves search state during the panel's lifecycle
+        if hostingView == nil || lastViewMode != currentViewMode {
+            lastViewMode = currentViewMode
+            updatePanelContent()
+        }
 
         // Store the current frontmost app before showing
         previousApp = NSWorkspace.shared.frontmostApplication
 
-        // Reset selection to first item
+        // Reset selection and search to initial state
         NotificationCenter.default.post(name: .floatingPanelWillShow, object: nil)
 
         // Position panel on the RIGHT side of the main screen
@@ -350,10 +356,15 @@ struct FloatingClipboardView: View {
     let onSelect: (ClipboardItem) -> Void
     let onDismiss: () -> Void
 
-    @State private var clipboardManager = ClipboardManager.shared
+    // Access the singleton directly - don't wrap @Observable in @State
+    private var clipboardManager: ClipboardManager { ClipboardManager.shared }
+
     @State private var selectedIndex: Int = 0
     @State private var searchText: String = ""
     @State private var selectedGroupIndex: Int = 0
+
+    // Force view updates when search changes
+    @State private var searchVersion: Int = 0
 
     private struct GroupOption: Identifiable {
         let id: UUID?
@@ -380,7 +391,8 @@ struct FloatingClipboardView: View {
         return groupOptions[selectedGroupIndex]
     }
 
-    private var visibleItems: [ClipboardItem] {
+    /// Computes visible items based on current search text and group selection
+    private func computeVisibleItems() -> [ClipboardItem] {
         let baseItems: [ClipboardItem]
 
         if let option = currentGroupOption {
@@ -389,26 +401,42 @@ struct FloatingClipboardView: View {
             } else if let groupID = option.id {
                 baseItems = clipboardManager.items(inGroup: groupID)
             } else {
-                baseItems = Array(clipboardManager.items.prefix(50))
+                // Use all items for searching
+                baseItems = clipboardManager.items
             }
         } else {
-            baseItems = Array(clipboardManager.items.prefix(50))
+            baseItems = clipboardManager.items
         }
 
-        if searchText.isEmpty {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+
+        if query.isEmpty {
+            // Only limit display when not searching
             return Array(baseItems.prefix(15))
         }
+
+        // Search through ALL items, then limit display results
         let filtered = baseItems.filter { item in
+            // Search program name
+            if item.programName.localizedCaseInsensitiveContains(query) {
+                return true
+            }
+            // Search content
             switch item.content {
             case .text(let text):
-                return text.localizedCaseInsensitiveContains(searchText)
+                return text.localizedCaseInsensitiveContains(query)
             case .image:
-                return "image".localizedCaseInsensitiveContains(searchText)
+                return "image".localizedCaseInsensitiveContains(query)
             case .file(let urls):
-                return urls.contains { $0.lastPathComponent.localizedCaseInsensitiveContains(searchText) }
+                return urls.contains { $0.lastPathComponent.localizedCaseInsensitiveContains(query) }
             }
         }
         return Array(filtered.prefix(15))
+    }
+
+    /// Convenience property for backward compatibility
+    private var visibleItems: [ClipboardItem] {
+        computeVisibleItems()
     }
 
     var body: some View {
@@ -492,31 +520,37 @@ struct FloatingClipboardView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                // Compute items once with explicit dependency on search
+                let items = computeVisibleItems()
+
                 ScrollViewReader { proxy in
                     ScrollView {
                         if viewMode == .thumbnail {
                             // Thumbnail grid view
                             LazyVStack(spacing: AureliaDesign.Spacing.sm) {
-                                ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
+                                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                     FloatingThumbnailRow(
                                         item: item,
                                         isSelected: index == selectedIndex,
                                         onTap: { onSelect(item) },
                                         onDelete: { deleteItem(item) }
                                     )
-                                    .id(index)
+                                    .id("\(index)-\(searchVersion)")
                                     .depthOpacity(index: index, surfaceCount: 5)
                                 }
                             }
                             .padding(AureliaDesign.Spacing.sm)
+                            .id("thumbnail-\(searchVersion)")
                         } else {
                             // List view
                             LazyVStack(spacing: AureliaDesign.Spacing.xs) {
-                                ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
+                                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                     floatingItemRow(for: item, at: index)
+                                        .id("\(index)-\(searchVersion)")
                                 }
                             }
                             .padding(AureliaDesign.Spacing.sm)
+                            .id("list-\(searchVersion)")
                         }
                     }
                     .onChange(of: selectedIndex) { _, newIndex in
@@ -622,12 +656,14 @@ struct FloatingClipboardView: View {
             if let char = notification.object as? String {
                 searchText += char
                 selectedIndex = 0
+                searchVersion += 1  // Force view update
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .floatingPanelBackspace)) { _ in
             if !searchText.isEmpty {
                 searchText.removeLast()
                 selectedIndex = 0
+                searchVersion += 1  // Force view update
             }
         }
     }
