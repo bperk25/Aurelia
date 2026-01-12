@@ -30,8 +30,12 @@ final class MenuBarManager {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem?.button {
-            button.image = NSImage(named: "MenuBarIcon")
-            button.image?.isTemplate = true
+            if let image = NSImage(named: "MenuBarIcon") {
+                // Set proper size for menu bar (18x18 points for proper alignment)
+                image.size = NSSize(width: 18, height: 18)
+                image.isTemplate = true
+                button.image = image
+            }
             button.action = #selector(togglePopover)
             button.target = self
 
