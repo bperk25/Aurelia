@@ -20,17 +20,6 @@ struct ContentView: View {
     }
 
     var filteredItems: [ClipboardItem] {
-        var items: [ClipboardItem]
-
-        switch selectedSidebarItem {
-        case .all:
-            items = clipboardManager.items
-        case .starred:
-            items = clipboardManager.pinnedItems
-        case .group(let groupID):
-            items = clipboardManager.items(inGroup: groupID)
-        }
-
         return clipboardManager.filteredItems(searchText: searchText, contentType: selectedFilter)
             .filter { item in
                 switch selectedSidebarItem {
@@ -156,12 +145,11 @@ struct ContentView: View {
                             columns: [GridItem(.adaptive(minimum: 220))],
                             spacing: AureliaDesign.Spacing.md
                         ) {
-                            ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
+                            ForEach(filteredItems) { item in
                                 ClipboardItemCard(
                                     item: item,
                                     clipboardManager: clipboardManager
                                 )
-                                .depthOpacity(index: index, surfaceCount: 8)
                             }
                         }
                         .padding(AureliaDesign.Spacing.lg)

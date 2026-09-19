@@ -50,6 +50,13 @@ final class ClipboardManager {
 
     // MARK: - Clipboard Checking
 
+    /// Captures the current pasteboard immediately instead of waiting for the
+    /// monitoring timer. Quick-access surfaces call this before they appear so
+    /// the latest copy is always available.
+    func captureCurrentClipboard() {
+        checkClipboard()
+    }
+
     private func checkClipboard() {
         // Check if monitoring is paused
         guard !privacy.isMonitoringPaused else { return }

@@ -108,6 +108,7 @@ final class MenuBarManager {
         } else {
             // Remember which app was active before showing popover
             previousApp = NSWorkspace.shared.frontmostApplication
+            ClipboardManager.shared.captureCurrentClipboard()
 
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             // Make popover the key window without activating the full app

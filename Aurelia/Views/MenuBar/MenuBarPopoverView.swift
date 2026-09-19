@@ -47,13 +47,13 @@ struct MenuBarPopoverView: View {
             } else if let groupID = option.id {
                 baseItems = clipboardManager.items(inGroup: groupID)
             } else {
-                baseItems = Array(clipboardManager.items.prefix(50))
+                baseItems = clipboardManager.items
             }
         } else {
-            baseItems = Array(clipboardManager.items.prefix(50))
+            baseItems = clipboardManager.items
         }
 
-        return Array(baseItems.prefix(15))
+        return baseItems
     }
 
     var body: some View {
@@ -94,26 +94,38 @@ struct MenuBarPopoverView: View {
                         .foregroundStyle(AureliaColors.secondaryText)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if visibleItems.isEmpty {
+                VStack(spacing: AureliaDesign.Spacing.sm) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 32))
+                        .foregroundStyle(AureliaColors.tertiaryText)
+                    Text("No clips in this group")
+                        .font(AureliaDesign.Typography.body)
+                        .foregroundStyle(AureliaColors.secondaryText)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                let items = visibleItems
+
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: AureliaDesign.Spacing.xs) {
-                            ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
+                            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                 MenuBarItemRow(
                                     item: item,
                                     isSelected: index == selectedIndex
                                 ) {
                                     selectItem(item)
                                 }
-                                .id(index)
-                                .depthOpacity(index: index, surfaceCount: 5)
+                                .id(item.id)
                             }
                         }
                         .padding(AureliaDesign.Spacing.sm)
                     }
                     .onChange(of: selectedIndex) { _, newIndex in
+                        guard items.indices.contains(newIndex) else { return }
                         withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo(newIndex, anchor: .center)
+                            proxy.scrollTo(items[newIndex].id, anchor: .center)
                         }
                     }
                 }
