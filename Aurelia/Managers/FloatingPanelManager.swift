@@ -17,7 +17,6 @@ final class FloatingPanelManager {
     private var hostingView: NSHostingView<AnyView>?
     private var localMonitor: Any?
     private var globalMouseMonitor: Any?
-    private var lastViewMode: PanelViewMode?
 
     /// The app that was active before showing the panel
     private var previousApp: NSRunningApplication?
@@ -109,17 +108,13 @@ final class FloatingPanelManager {
         // Update panel size based on current view mode
         let width = panelWidth
         let height = panelHeight
-        let currentViewMode = AppSettings.shared.panelViewMode
-
-        // Only recreate view if needed (first time or view mode changed)
-        // This preserves search state during the panel's lifecycle
-        if hostingView == nil || lastViewMode != currentViewMode {
-            lastViewMode = currentViewMode
-            updatePanelContent()
-        }
-
         // Store the current frontmost app before showing
         previousApp = NSWorkspace.shared.frontmostApplication
+
+        // Capture before Aurelia becomes frontmost, then create a fresh view so
+        // the overlay always reflects the current clipboard and settings.
+        ClipboardManager.shared.captureCurrentClipboard()
+        updatePanelContent()
 
         // Reset selection and search to initial state
         NotificationCenter.default.post(name: .floatingPanelWillShow, object: nil)
@@ -363,9 +358,6 @@ struct FloatingClipboardView: View {
     @State private var searchText: String = ""
     @State private var selectedGroupIndex: Int = 0
 
-    // Force view updates when search changes
-    @State private var searchVersion: Int = 0
-
     private struct GroupOption: Identifiable {
         let id: UUID?
         let name: String
@@ -410,13 +402,9 @@ struct FloatingClipboardView: View {
 
         let query = searchText.trimmingCharacters(in: .whitespaces)
 
-        if query.isEmpty {
-            // Only limit display when not searching
-            return Array(baseItems.prefix(15))
-        }
+        if query.isEmpty { return baseItems }
 
-        // Search through ALL items, then limit display results
-        let filtered = baseItems.filter { item in
+        return baseItems.filter { item in
             // Search program name
             if item.programName.localizedCaseInsensitiveContains(query) {
                 return true
@@ -431,7 +419,6 @@ struct FloatingClipboardView: View {
                 return urls.contains { $0.lastPathComponent.localizedCaseInsensitiveContains(query) }
             }
         }
-        return Array(filtered.prefix(15))
     }
 
     /// Convenience property for backward compatibility
@@ -456,6 +443,17 @@ struct FloatingClipboardView: View {
                     .padding(.vertical, 4)
                     .background(AureliaColors.abyssMedium)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AureliaColors.secondaryText)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Close Aurelia")
+                .accessibilityLabel("Close Aurelia")
             }
             .padding(AureliaDesign.Spacing.md)
             .background(AureliaColors.abyssMedium.opacity(0.8))
@@ -466,16 +464,10 @@ struct FloatingClipboardView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(AureliaColors.tertiaryText)
 
-                ZStack(alignment: .leading) {
-                    if searchText.isEmpty {
-                        Text("Type to search...")
-                            .font(AureliaDesign.Typography.body)
-                            .foregroundStyle(AureliaColors.tertiaryText)
-                    }
-                    Text(searchText)
-                        .font(AureliaDesign.Typography.body)
-                        .foregroundStyle(AureliaColors.primaryText)
-                }
+                TextField("Search clips", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(AureliaDesign.Typography.body)
+                    .foregroundStyle(AureliaColors.primaryText)
 
                 Spacer()
 
@@ -489,6 +481,8 @@ struct FloatingClipboardView: View {
                             .foregroundStyle(AureliaColors.tertiaryText)
                     }
                     .buttonStyle(.plain)
+                    .help("Clear search")
+                    .accessibilityLabel("Clear search")
                 }
             }
             .padding(.horizontal, AureliaDesign.Spacing.md)
@@ -509,12 +503,12 @@ struct FloatingClipboardView: View {
                         .foregroundStyle(AureliaColors.secondaryText)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if visibleItems.isEmpty && !searchText.isEmpty {
+            } else if visibleItems.isEmpty {
                 VStack(spacing: AureliaDesign.Spacing.sm) {
-                    Image(systemName: "magnifyingglass")
+                    Image(systemName: searchText.isEmpty ? "tray" : "magnifyingglass")
                         .font(.system(size: 32))
                         .foregroundStyle(AureliaColors.tertiaryText)
-                    Text("No items found")
+                    Text(searchText.isEmpty ? "No clips in this group" : "No matching clips")
                         .font(AureliaDesign.Typography.body)
                         .foregroundStyle(AureliaColors.secondaryText)
                 }
@@ -535,27 +529,32 @@ struct FloatingClipboardView: View {
                                         onTap: { onSelect(item) },
                                         onDelete: { deleteItem(item) }
                                     )
-                                    .id("\(index)-\(searchVersion)")
-                                    .depthOpacity(index: index, surfaceCount: 5)
+                                    .id(item.id)
                                 }
                             }
                             .padding(AureliaDesign.Spacing.sm)
-                            .id("thumbnail-\(searchVersion)")
                         } else {
                             // List view
                             LazyVStack(spacing: AureliaDesign.Spacing.xs) {
                                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                     floatingItemRow(for: item, at: index)
-                                        .id("\(index)-\(searchVersion)")
+                                        .id(item.id)
                                 }
                             }
                             .padding(AureliaDesign.Spacing.sm)
-                            .id("list-\(searchVersion)")
                         }
                     }
                     .onChange(of: selectedIndex) { _, newIndex in
+                        guard items.indices.contains(newIndex) else { return }
                         withAnimation(.easeOut(duration: 0.1)) {
-                            proxy.scrollTo(newIndex, anchor: .center)
+                            proxy.scrollTo(items[newIndex].id, anchor: .center)
+                        }
+                    }
+                    .onChange(of: items.map(\.id)) { _, newIDs in
+                        clampSelection(itemCount: newIDs.count)
+                        guard newIDs.indices.contains(selectedIndex) else { return }
+                        withAnimation(.easeOut(duration: 0.1)) {
+                            proxy.scrollTo(newIDs[selectedIndex], anchor: .center)
                         }
                     }
                 }
@@ -565,61 +564,68 @@ struct FloatingClipboardView: View {
                 .background(AureliaColors.separator)
 
             // Group selector footer
-            HStack(spacing: AureliaDesign.Spacing.md) {
-                // Left arrow
-                Button {
-                    navigateGroup(by: -1)
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(groupOptions.count > 1 ? AureliaColors.secondaryText : AureliaColors.tertiaryText)
-                }
-                .buttonStyle(.plain)
-                .disabled(groupOptions.count <= 1)
-
-                Spacer()
-
-                // Group selector dropdown
-                Menu {
-                    ForEach(Array(groupOptions.enumerated()), id: \.element.identifier) { index, option in
-                        Button {
-                            selectedGroupIndex = index
-                            selectedIndex = 0
-                        } label: {
-                            Label(option.name, systemImage: option.icon)
-                        }
+            VStack(spacing: AureliaDesign.Spacing.xs) {
+                HStack(spacing: AureliaDesign.Spacing.md) {
+                    // Left arrow
+                    Button {
+                        navigateGroup(by: -1)
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(groupOptions.count > 1 ? AureliaColors.secondaryText : AureliaColors.tertiaryText)
                     }
-                } label: {
-                    HStack(spacing: AureliaDesign.Spacing.xs) {
-                        if let option = currentGroupOption {
-                            Image(systemName: option.icon)
-                                .font(.system(size: 10))
-                            Text(option.name)
-                                .font(AureliaDesign.Typography.captionBold)
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 8))
+                    .buttonStyle(.plain)
+                    .disabled(groupOptions.count <= 1)
+
+                    Spacer()
+
+                    // Group selector dropdown
+                    Menu {
+                        ForEach(Array(groupOptions.enumerated()), id: \.element.identifier) { index, option in
+                            Button {
+                                selectedGroupIndex = index
+                                selectedIndex = 0
+                            } label: {
+                                Label(option.name, systemImage: option.icon)
+                            }
                         }
+                    } label: {
+                        HStack(spacing: AureliaDesign.Spacing.xs) {
+                            if let option = currentGroupOption {
+                                Image(systemName: option.icon)
+                                    .font(.system(size: 10))
+                                Text(option.name)
+                                    .font(AureliaDesign.Typography.captionBold)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 8))
+                            }
+                        }
+                        .foregroundStyle(AureliaColors.secondaryText)
+                        .padding(.horizontal, AureliaDesign.Spacing.sm)
+                        .padding(.vertical, AureliaDesign.Spacing.xs)
+                        .background(AureliaColors.abyssMedium)
+                        .clipShape(RoundedRectangle(cornerRadius: AureliaDesign.Radius.sm))
                     }
-                    .foregroundStyle(AureliaColors.secondaryText)
-                    .padding(.horizontal, AureliaDesign.Spacing.sm)
-                    .padding(.vertical, AureliaDesign.Spacing.xs)
-                    .background(AureliaColors.abyssMedium)
-                    .clipShape(RoundedRectangle(cornerRadius: AureliaDesign.Radius.sm))
-                }
-                .menuStyle(.borderlessButton)
+                    .menuStyle(.borderlessButton)
 
-                Spacer()
+                    Spacer()
 
-                // Right arrow
-                Button {
-                    navigateGroup(by: 1)
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(groupOptions.count > 1 ? AureliaColors.secondaryText : AureliaColors.tertiaryText)
+                    // Right arrow
+                    Button {
+                        navigateGroup(by: 1)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(groupOptions.count > 1 ? AureliaColors.secondaryText : AureliaColors.tertiaryText)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(groupOptions.count <= 1)
                 }
-                .buttonStyle(.plain)
-                .disabled(groupOptions.count <= 1)
+
+                Text("↑↓ Navigate   ↩ Paste   esc Close")
+                    .font(AureliaDesign.Typography.caption)
+                    .foregroundStyle(AureliaColors.tertiaryText)
+                    .accessibilityLabel("Use the up and down arrows to navigate, Return to paste, and Escape to close")
             }
             .padding(AureliaDesign.Spacing.sm)
             .background(AureliaColors.abyssMedium.opacity(0.8))
@@ -656,15 +662,16 @@ struct FloatingClipboardView: View {
             if let char = notification.object as? String {
                 searchText += char
                 selectedIndex = 0
-                searchVersion += 1  // Force view update
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .floatingPanelBackspace)) { _ in
             if !searchText.isEmpty {
                 searchText.removeLast()
                 selectedIndex = 0
-                searchVersion += 1  // Force view update
             }
+        }
+        .onChange(of: searchText) { _, _ in
+            selectedIndex = 0
         }
     }
 
@@ -687,6 +694,10 @@ struct FloatingClipboardView: View {
         onSelect(visibleItems[selectedIndex])
     }
 
+    private func clampSelection(itemCount: Int) {
+        selectedIndex = min(selectedIndex, max(0, itemCount - 1))
+    }
+
     @ViewBuilder
     private func floatingItemRow(for item: ClipboardItem, at index: Int) -> some View {
         FloatingItemRow(
@@ -699,8 +710,6 @@ struct FloatingClipboardView: View {
                 deleteItem(item)
             }
         )
-        .id(index)
-        .depthOpacity(index: index, surfaceCount: 5)
     }
 
     private func deleteItem(_ item: ClipboardItem) {
@@ -773,13 +782,15 @@ struct FloatingItemRow: View {
             // Delete button (shows on hover)
             if isHovering, let onDelete = onDelete {
                 Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
+                    Image(systemName: "trash")
                         .font(.system(size: 14))
                         .foregroundStyle(AureliaColors.tertiaryText)
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, AureliaDesign.Spacing.sm)
                 .transition(.opacity)
+                .help("Delete clip")
+                .accessibilityLabel("Delete clip")
             }
         }
         .background(isHighlighted ? AureliaColors.hover : Color.clear)
@@ -936,13 +947,15 @@ struct FloatingThumbnailRow: View {
             // Delete button (shows on hover)
             if isHovering, let onDelete = onDelete {
                 Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
+                    Image(systemName: "trash")
                         .font(.system(size: 16))
                         .foregroundStyle(AureliaColors.tertiaryText)
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, AureliaDesign.Spacing.sm)
                 .transition(.opacity)
+                .help("Delete clip")
+                .accessibilityLabel("Delete clip")
             }
         }
         .background(isHighlighted ? AureliaColors.hover : Color.clear)
